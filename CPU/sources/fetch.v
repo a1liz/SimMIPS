@@ -19,7 +19,7 @@
 // 
 //////////////////////////////////////////////////////////////////////////////////
 
-`define STARTADDR 32'H00000034		// Start Address of Program
+`define STARTADDR 32'HBFC00000		// Start Address of Program
 module fetch(
 	input wire			clk,		// clock	
 	input wire			resetn,		// reset signal , low level valid

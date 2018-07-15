@@ -26,8 +26,12 @@ module mem(
 	output wire [ 31:0] dm_addr,
 	output reg 	[  3:0] dm_wen,
 	output reg 	[ 31:0] dm_wdata,
+	output wire dm_ce_n,       // chip enable,  low valid
+	output wire dm_oe_n,       // read enable,  low valid
+	output wire dm_we_n,       // write enable, low valid
 	output wire 		MEM_over,
 	output wire	[117:0] MEM_WB_bus,
+	
 
 	// Five Levels Pipeline New Interface
 	input wire 			MEM_allow_in,
@@ -138,6 +142,12 @@ module mem(
 							  (dm_addr[1:0]==2'd2) ? dm_rdata[23:16] : dm_rdata[31:24];
 	assign load_result[31:8] = ls_word ? dm_rdata[31:8] : {24{lb_sign & load_sign}};
 //----------{load/store memory access}end
+
+//----------{CE signal}begin
+    assign dm_ce_n = ~MEM_valid | MEM_over; // when MEM is valid and not over, dm_ce_n is 0.
+    assign dm_oe_n = ~inst_load;
+    assign dm_we_n = ~inst_store;
+//----------{CE signal}end
 
 //----------{MEM finish}begin
 	// Cause of data in RAM is synchronize wirte and read,

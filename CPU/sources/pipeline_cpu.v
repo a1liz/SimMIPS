@@ -38,7 +38,19 @@ module pipeline_cpu(
     // Five Levels Pipeline
     output wire [31:0] cpu_5_valid,
     output wire [31:0] HI_data,
-    output wire [31:0] LO_data
+    output wire [31:0] LO_data,
+    
+    // SRAM inst_rom part
+    output wire [19:0] SRAM_inst_addr,
+    input wire [31:0] SRAM_inst,
+    
+    // SRAM ram part
+    inout wire [31:0] SRAM_dm_data,
+    output wire [19:0] SRAM_dm_addr,
+    output wire [3:0] SRAM_dm_wen,
+    output wire SRAM_dm_ce_n,       // chip enable,  low valid
+    output wire SRAM_dm_oe_n,       // read enable,  low valid
+    output wire SRAM_dm_we_n       // write enable, low valid
     );
 
 // ----------{Five Levels Pipeline Control Signal}begin---------- //
@@ -288,6 +300,9 @@ module pipeline_cpu(
         .dm_addr      (dm_addr      ),  // O, 32
         .dm_wen       (dm_wen       ),  // O, 4 
         .dm_wdata     (dm_wdata     ),  // O, 32
+        .dm_ce_n      (SRAM_dm_ce_n      ),  // O, 1
+        .dm_oe_n      (SRAM_dm_oe_n      ),  // O, 1
+        .dm_we_n      (SRAM_dm_we_n      ),  // O, 1
         .MEM_over     (MEM_over     ),  // O, 1
         .MEM_WB_bus   (MEM_WB_bus   ),  // O, 118
         
@@ -320,11 +335,11 @@ module pipeline_cpu(
         .LO_data     (LO_data     )   // O, 32
     );
 
-    inst_rom inst_rom_module(
-        .clka       (clk           ),  // I, 1 ,clock
-        .addra      (inst_addr[9:2]),  // I, 8 ,instruction address
-        .douta      (inst          )   // O, 32,instruction
-    );
+//    inst_rom inst_rom_module(
+//        .clka       (clk           ),  // I, 1 ,clock
+//        .addra      (inst_addr[9:2]),  // I, 8 ,instruction address
+//        .douta      (inst          )   // O, 32,instruction
+//    );
 
     regfile rf_module(
         .clk    (clk      ),  // I, 1
@@ -341,21 +356,34 @@ module pipeline_cpu(
         .test_data(rf_data)   // O, 32
     );
     
-    data_ram data_ram_module(
-        .clka   (clk         ),  // I, 1,  clock 
-        .wea    (dm_wen      ),  // I, 1,  write Enable
-        .addra  (dm_addr[9:2]),  // I, 8,  read address
-        .dina   (dm_wdata    ),  // I, 32, write data
-        .douta  (dm_rdata    ),  // O, 32, read data
+//    data_ram data_ram_module(
+//        .clka   (clk         ),  // I, 1,  clock 
+//        .wea    (dm_wen      ),  // I, 4,  write Enable
+//        .addra  (dm_addr[9:2]),  // I, 8,  read address
+//        .dina   (dm_wdata    ),  // I, 32, write data
+//        .douta  (dm_rdata    ),  // O, 32, read data
 
-        //display mem
-        .clkb   (clk          ),  // I, 1,  clock
-        .web    (4'd0         ),  // don't use write ability of port2
-        .addrb  (mem_addr[9:2]),  // I, 8,  read address
-        .doutb  (mem_data     ),  // I, 32, write data
-        .dinb   (32'd0        )   // don't use write ability of port2
-    );
+//        //display mem
+//        .clkb   (clk          ),  // I, 1,  clock
+//        .web    (4'd0         ),  // don't use write ability of port2
+//        .addrb  (mem_addr[9:2]),  // I, 8,  read address
+//        .doutb  (mem_data     ),  // O, 32, read data
+//        .dinb   (32'd0        )   // don't use write ability of port2
+//    );
 
 // ----------{Each Module Instantiation}end-------------------- //
+
+// ----------{Communication with SRAM}begin-------------------- //
+    // SRAM inst_rom part
+    assign SRAM_inst_addr = inst_addr[21:2];
+    assign SRAM_inst = inst;
+    
+    // SRAM ram part
+    assign SRAM_dm_wen = ~dm_wen;
+    assign SRAM_dm_addr = dm_addr[21:2];
+    assign SRAM_dm_data = ~SRAM_dm_we_n ? dm_wdata : ~SRAM_dm_oe_n ? dm_rdata : 32'd0;
+    
+// ----------{Communication with SRAM}end---------------------- //
+
 
 endmodule
