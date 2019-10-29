@@ -2,7 +2,7 @@
 
 SimMIPS is mainly a pipeline CPU based on MIPS32.
 
-Joined NCSSCS2018.
+Joined NSCSCC2018.
 
 ## Target
 
