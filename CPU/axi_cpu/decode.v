@@ -21,21 +21,27 @@
 
 module decode(
 	input wire		ID_valid,
-	input wire [63:0]	IF_ID_bus_r,	// If->ID bus
+	input wire [65:0]	IF_ID_bus_r,	// If->ID bus
 	input wire [31:0]	rs_value,
 	input wire [31:0]	rt_value,
 	output wire [ 4:0]	rs,
 	output wire [ 4:0]	rt,
 	output wire [32:0]	jbr_bus,		// jump bus
-	// output			inst_jbr,	// if instruciton is jump branch instruciton, Five Levels Pipeline doesn't use 
+	output			    inst_jbr,	    // if instruciton is jump branch instruciton
 	output wire 		ID_over,		// ID module finish
-	output wire [167:0]	ID_EXE_bus,		// ID->EXE bus
+	output wire [181:0]	ID_EXE_bus,		// ID->EXE bus
 
 	// Five Levels Pipeline New Interface
 	input wire 		IF_over,		// branch instruciton need this signal
+	input wire      EXE_over,
+	input wire      MEM_over,
 	input wire [ 4:0]	EXE_wdest,		// destination address that EXE will write back to regfile 
 	input wire [ 4:0]	MEM_wdest,		// destination address that MEM will write back to regfile 
 	input wire [ 4:0]	WB_wdest,		// destination address that WB will write back to regfile 
+    input wire [31:0]   EXE_result_quick_get,
+    input wire [31:0]   MEM_result_quick_get,
+    input wire          EXE_quick_en,
+    input wire          MEM_quick_en,
 
 	// show PC
 	output wire [31:0]	ID_pc
@@ -44,13 +50,15 @@ module decode(
 //----------{IF->ID bus}begin
 	wire [31:0] pc;
 	wire [31:0] inst;
-	assign {pc, inst} = IF_ID_bus_r;	// IF->ID bus sends to pc and instruction
+    wire addr_exc;
+    wire is_ds;
+	assign {pc, inst, addr_exc, is_ds} = IF_ID_bus_r;	// IF->ID bus sends to pc and instruction
 //----------{IF->ID bus}end
 
 //----------{instruction decode} begin
+    wire [31:0] rs_real_value;
+	wire [31:0] rt_real_value;
     wire [5:0] op;
-    wire [4:0] rs;
-    wire [4:0] rt;
     wire [4:0] rd;
     wire [4:0] sa;
     wire [5:0] funct;
@@ -86,7 +94,8 @@ module decode(
     wire inst_JAL,     inst_JR,     	inst_JALR, 		inst_MFHI;
     wire inst_MFLO,    inst_MTHI,   	inst_MTLO, 		inst_BREAK;
     wire inst_SYSCALL, inst_LB,     	inst_LBU,    	inst_LH;
-    wire inst_LHU,     inst_LW,     	inst_SB,     	inst_SH;
+    wire inst_LHU,     inst_LW,     	inst_LWL,       inst_LWR;
+    wire inst_SB,     	inst_SH,        inst_SWL,       inst_SWR;
     wire inst_SW,      inst_ERET,   	inst_MFC0,   	inst_MTC0;
 
     wire op_zero;   // Operator Code is all-zero
@@ -127,7 +136,6 @@ module decode(
     assign inst_SLLV = op_zero & sa_zero & (funct == 6'b000100);    // Shift Word Left Logical Variable
     assign inst_SRA = op_zero & rs_zero & (funct == 6'b000011);     // Shift Word Right Arithmetic
     assign inst_SRAV = op_zero & sa_zero & (funct == 6'b0000111);   // Shift Word Right Arithmetic Variable
-    // Question 
     assign inst_SRL = op_zero & rs_zero & (funct == 6'b000010);     // Shift Word Right Logical
     assign inst_SRLV = op_zero & sa_zero & (funct == 6'b000110);    // Shift Word Right Logical Variable
     assign inst_BEQ = (op == 6'b000100);                            // Branch on Equal
@@ -153,9 +161,13 @@ module decode(
     assign inst_LH = (op == 6'b100001);                             // Load Halfword
     assign inst_LHU = (op == 6'b100101);                            // Load Halfword Unsigned
     assign inst_LW = (op == 6'b100011);                             // Load Word
+    assign inst_LWL = (op == 6'b100010);                            // Load Word Left
+    assign inst_LWR = (op == 6'b100110);                            // Load Word Right
     assign inst_SB = (op == 6'b101000);                             // Store Byte
     assign inst_SH = (op == 6'b101001);                             // Store Halfword
     assign inst_SW = (op == 6'b101011);                             // Store Word
+    assign inst_SWL = (op == 6'b101010);                            // Store Word Left
+    assign inst_SWR = (op == 6'b101110);                            // Store Word Right
     assign inst_ERET = (op == 6'b010000) & (rs == 5'b10000) & rt_zero & rd_zero & sa_zero & (funct == 6'b011000);   // Exception Return
     assign inst_MFC0 = (op == 6'b010000) & rs_zero & (inst[10:3] == 8'd0);   		// Move from Coprocessor 0
     assign inst_MTC0 = (op == 6'b010000) & (rs == 5'b00100) & (inst[10:3] == 8'd0);	// Move to Coprocessor 0
@@ -163,7 +175,6 @@ module decode(
     // Jump Branch Instruction
     wire inst_jr;		// register jump instruction
     wire inst_j_link;	// link jump instruction
-    wire inst_jbr;		// all branch jump instruction
     assign inst_jr = inst_JALR | inst_JR;
     assign inst_j_link = inst_JAL | inst_JALR | inst_BLTZAL | inst_BGEZAL;
     assign inst_jbr = inst_J 		| inst_JAL 		| inst_jr
@@ -174,8 +185,8 @@ module decode(
     // load store
     wire inst_load;
     wire inst_store;
-    assign inst_load = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW;	// load instruction
-    assign inst_store = inst_SB | inst_SH | inst_SW;						// store instruction
+    assign inst_load = inst_LB | inst_LBU | inst_LH | inst_LHU | inst_LW | inst_LWL | inst_LWR;	// load instruction
+    assign inst_store = inst_SB | inst_SH | inst_SW | inst_SWL | inst_SWR;						// store instruction
     
    	
     
@@ -185,7 +196,7 @@ module decode(
     wire inst_nor, inst_or, inst_xor;
     wire inst_sll, inst_srl, inst_sra;
     
-    assign inst_add = inst_ADD | inst_ADDI | inst_ADDU | inst_ADDIU | inst_LW | inst_SW | inst_j_link;
+    assign inst_add = inst_ADD | inst_ADDI | inst_ADDU | inst_ADDIU | inst_load | inst_store | inst_j_link;
     assign inst_sub = inst_SUB | inst_SUBU;
     assign inst_slt = inst_SLT | inst_SLTI;
     assign inst_sltu =  inst_SLTU | inst_SLTIU;
@@ -200,9 +211,15 @@ module decode(
     assign inst_srl = inst_SRL | inst_SRLV;
     assign inst_sra = inst_SRA | inst_SRAV;
 
+    // Signed
+    wire inst_signed;
+    assign inst_signed = inst_MULT | inst_DIV;
     // shift instruction that use sa area as offset 
     wire inst_shf_sa;
-    assign inst_shf_sa = inst_SLL & inst_SLLV & inst_SRA & inst_SRAV & inst_SRL & inst_SRLV;
+    assign inst_shf_sa = inst_SLL | inst_SRA | inst_SRL;
+    
+    wire inst_op1_use_rs_low5;
+    assign inst_op1_use_rs_low5 = inst_SLLV | inst_SRAV;
 
     // classify by immediate extend method
     wire  inst_imm_zero;	// immediate zero_extend
@@ -229,6 +246,28 @@ module decode(
 	assign inst_no_rs = inst_MTC0 | inst_BREAK | inst_SYSCALL | inst_ERET;
 	assign inst_no_rt = inst_wdest_rt | inst_BGEZ | inst_BLTZAL | inst_BGEZAL
 					  | inst_J | inst_JAL;
+    
+    // classify by rt/rs is rdest or wdest
+    wire inst_rt_is_rdest;
+    wire inst_rs_is_rdest;
+    wire inst_rt_is_wdest;
+    assign inst_rt_is_rdest = inst_ADD | inst_ADDU | inst_SUB | inst_SUBU
+                            | inst_SLT |inst_SLTU | inst_DIV | inst_DIVU 
+                            | inst_MULT | inst_MULTU | inst_AND | inst_NOR
+                            | inst_OR | inst_XOR | inst_SLLV | inst_SLL
+                            | inst_SRAV | inst_SRA | inst_SRLV | inst_SRL
+                            | inst_BEQ | inst_BNE | inst_store | inst_LWL
+                            | inst_LWR | inst_MTC0;
+    assign inst_rs_is_rdest = inst_ADD | inst_ADDI | inst_ADDU | inst_ADDIU | inst_SUB
+                            | inst_SUBU | inst_SLT | inst_SLTI | inst_SLTU
+                            | inst_SLTIU | inst_DIV | inst_DIVU | inst_MULT
+                            | inst_MULTU | inst_AND | inst_ANDI | inst_NOR
+                            | inst_OR | inst_ORI | inst_XOR | inst_XORI
+                            | inst_SLLV | inst_SRAV | inst_BEQ | inst_BNE
+                            | inst_BGEZ | inst_BGTZ | inst_BLEZ | inst_BLTZ
+                            | inst_BGEZAL | inst_BLTZAL | inst_JR |inst_JALR
+                            | inst_MTHI | inst_MTLO | inst_load | inst_store;
+
 //-----------{instruction decode}end
 
 //-----------{Branch Instruction Execute}begin
@@ -241,15 +280,15 @@ module decode(
 	wire [31:0] j_target;
 	assign  j_taken = inst_J | inst_JAL | inst_jr;
 	// register jump address is rs_value, other is {bd_pc[31:28], target, 2'b00};
-	assign j_target = inst_jr ? rs_value : {bd_pc[31:28],target,2'b00};
+	assign j_target = inst_jr ? rs_real_value : {bd_pc[31:28],target,2'b00};
 
 	// branch instruction
 	wire rs_equal_rt;
 	wire rs_ez;
 	wire rs_ltz;
-	assign rs_equal_rt = (rs_value == rt_value);	// GPR[rs] == GPR[rt]
-	assign rs_ez = ~(|rs_value);					// GPR[rs] == 0
-	assign rs_ltz = rs_value[31];					// GPR[rs] < 0
+	assign rs_equal_rt = (rs_real_value == rt_real_value);	// GPR[rs] == GPR[rt]
+	assign rs_ez = ~(|rs_real_value);					// GPR[rs] == 0
+	assign rs_ltz = rs_real_value[31];					// GPR[rs] < 0
 	wire br_taken;
 	wire [31:0] br_target;
 	assign br_taken = inst_BEQ & rs_equal_rt
@@ -278,23 +317,37 @@ module decode(
 	// Due to pipeline, there's data correlation
 	wire rs_wait;
 	wire rt_wait;
-	assign rs_wait = ~inst_no_rs & (rs!=5'd0) & ((rs==EXE_wdest) | (rs==MEM_wdest) | (rs==WB_wdest));
-	assign rt_wait = ~inst_no_rt & (rt!=5'd0) & ((rt==EXE_wdest) | (rt==MEM_wdest) | (rt==WB_wdest));
+	wire [31:0] rs_quick_get;
+	wire [31:0] rt_quick_get;
+	
+	assign rs_wait = ~inst_no_rs & inst_rs_is_rdest & (rs!=5'd0) & ((rs==EXE_wdest) | (rs==MEM_wdest) | (rs==WB_wdest));
+	assign rt_wait = ~inst_no_rt & inst_rt_is_rdest & (rt!=5'd0) & ((rt==EXE_wdest) | (rt==MEM_wdest) | (rt==WB_wdest));
+	
+	assign rs_quick_get = ((rs==EXE_wdest) & EXE_quick_en & EXE_over) ? EXE_result_quick_get : ((rs==MEM_wdest) & MEM_quick_en & MEM_over) ? MEM_result_quick_get : 32'd0;
+	assign rt_quick_get = ((rt==EXE_wdest) & EXE_quick_en & EXE_over) ? EXE_result_quick_get : ((rt==MEM_wdest) & MEM_quick_en & MEM_over) ? MEM_result_quick_get : 32'd0;
+
+    assign rs_real_value = (rs_wait & (((rs==EXE_wdest) & EXE_quick_en & EXE_over) | ((rs==MEM_wdest) & MEM_quick_en & MEM_over))) ? rs_quick_get : rs_value;
+    assign rt_real_value = (rt_wait & (((rt==EXE_wdest) & EXE_quick_en & EXE_over) | ((rt==MEM_wdest) & MEM_quick_en & MEM_over))) ? rt_quick_get : rt_value;
 
 	// As for branch jump instruction, only after IF executing finish, ID should be finish.
 	// Otherwise, ID has been finish and IF is still fetching, next_pc can not be latched to PC,
 	// and when IF is finish, next_pc can be latched to PC, the data in jbr_bus is invalid.
 	// Leading to branch jumping failure.
 	// (~inst_jbr | IF_over) is (~inst_jbr | (inst_jbr & IF_over))
-	assign ID_over = ID_valid & ~rs_wait & ~rt_wait & (~inst_jbr | IF_over);
+	assign ID_over = ID_valid 
+	               & (~rs_wait | ((rs==EXE_wdest) & EXE_quick_en & EXE_over) | ((rs==MEM_wdest) & MEM_quick_en & MEM_over)) 
+	               & (~rt_wait | ((rt==EXE_wdest) & EXE_quick_en & EXE_over) | ((rt==MEM_wdest) & MEM_quick_en & MEM_over))
+	               & (~inst_jbr | IF_over);
 //-----------{ID finish}end
 
 //-----------{ID->EXE bus}begin
 	// EXE needs
 	wire [1:0] muldiv;
+	wire muldiv_signed;
 	wire mthi;
 	wire mtlo;
     assign muldiv = inst_mul ? 2'b01 : inst_div ? 2'b10 : 2'b00;
+    assign muldiv_signed = inst_signed;
 	assign mthi = inst_MTHI;
 	assign mtlo = inst_MTLO;
 	// ALU's 2 operand and control signal
@@ -304,8 +357,8 @@ module decode(
 
 	// Link jump is just storing PC from jump to GPR[31]
 	// In pipeline CPU, we'd better think about delay slot, so link jump should calculate PC + 8, and store it to GPR[31]
-	assign alu_operand1 = inst_j_link ? pc : inst_shf_sa ? {27'd0,sa} : rs_value;
-	assign alu_operand2 = inst_j_link ? 32'd8 : inst_imm_zero ? {16'd0, imm} : inst_imm_sign ? {{16{imm[15]}},imm} : rt_value;
+	assign alu_operand1 = inst_j_link ? pc : inst_shf_sa ? {27'd0,sa} : inst_op1_use_rs_low5 ? {27'd0,rs_real_value[4:0]} : rs_real_value;
+	assign alu_operand2 = inst_j_link ? 32'd8 : inst_imm_zero ? {16'd0, imm} : inst_imm_sign ? {{16{imm[15]}},imm} : rt_real_value;
 	assign alu_control = {inst_add,		// ALU operator code, one-hot coding
 						  inst_sub, 
 						  inst_slt, 
@@ -321,14 +374,18 @@ module decode(
 	// load/store message that MEM may use.
 	wire lb_sign;	// load byte is signed-load
 	wire ls_word;	// load/store is Byte or Word, 0:byte;1:word
-	wire [3:0] mem_control;	// control signal that MEM need
+    wire [1:0] ls_bit;  // load/store
+	wire [5:0] mem_control;	// control signal that MEM need
 	wire [31:0] store_data;
 	assign lb_sign = inst_LB;
-	assign ls_word = inst_LW | inst_SW;
+	assign ls_word = inst_LW | inst_SW | inst_LWL | inst_LWR | inst_SWL | inst_SWR;
+    assign ls_bit[1] = inst_LWL | inst_SWL | inst_LW | inst_SW;
+    assign ls_bit[0] = inst_LWR | inst_SWR | inst_LW | inst_SW;
 	assign mem_control = {inst_load,
 						  inst_store,
 						  ls_word,
-						  lb_sign};
+						  lb_sign,
+                          ls_bit};
 
 	// message that WB may need
 	wire mfhi;
@@ -337,27 +394,45 @@ module decode(
 	wire mfc0;
 	wire [7:0] cp0r_addr;
 	wire syscall;	// there's special operation in WB for syscall and eret 
-	wire eret;
-	wire rf_wen;			// WB's register write enable
+    wire eret;
+	wire break;
+    wire ri_exc;
+    wire ov_exc_en;
+    wire [1:0] halfword;
+	wire [3:0] rf_wen;			// WB's register write enable
 	wire [4:0] rf_wdest;	// WB's destination register 
+	wire       data_related_en;    // 1 -> EXE, 0 -> MEM
 	assign syscall = inst_SYSCALL;
 	assign eret = inst_ERET;
+    assign break = inst_BREAK;
+    assign ri_exc = ~(inst_add | inst_sub | inst_slt | inst_sltu
+                  | inst_and | inst_nor | inst_or  | inst_xor 
+                  | inst_sll | inst_srl | inst_sra | inst_lui
+                  | inst_mul | inst_div
+                  | inst_load | inst_store | inst_jbr 
+                  | mthi | mtlo | mfhi | mflo | mtc0 | mfc0 
+                  | syscall | eret | break);
+    assign ov_exc_en = inst_ADD | inst_ADDI | inst_SUB;
 	assign mfhi = inst_MFHI;
 	assign mflo = inst_MFLO;
 	assign mtc0 = inst_MTC0;
 	assign mfc0 = inst_MFC0;
 	assign cp0r_addr = {rd,cp0r_sel};
-	assign rf_wen = inst_wdest_rt | inst_wdest_31 | inst_wdest_rd;
+	assign halfword = (inst_LH | inst_SH) ? 2'b10 : inst_LHU ? 2'b01 : 2'b00; 
+	assign rf_wen = {4{inst_wdest_rt | inst_wdest_31 | inst_wdest_rd}};
 	assign rf_wdest = inst_wdest_rt ? rt : 			// not use regfile then set to 0
 					  inst_wdest_31 ? 5'd31 :		// so that judge clearly whether data correlate or not.
 					  inst_wdest_rd ? rd : 5'd0;
-	assign store_data = rt_value;
-	assign ID_EXE_bus = {muldiv, mthi, mtlo,						// EXE need
+	assign data_related_en = (((alu_control!=12'd0) | (muldiv!=2'd0)) & (!inst_load)) ? 1'b1 : 1'b0;
+	assign store_data = rt_real_value;
+	assign ID_EXE_bus = {muldiv, muldiv_signed, mthi, mtlo,			// EXE need
 						 alu_control, alu_operand1, alu_operand2,	// EXE need
+						 data_related_en,                           // EXE need
 						 mem_control, store_data,					// MEM need
 						 mfhi, mflo,								// WB need
-						 mtc0, mfc0, cp0r_addr, syscall, eret,		// WB need
-						 rf_wen, rf_wdest,							// WB need
+						 mtc0, mfc0, cp0r_addr,                     // WB need
+                         syscall, eret, break, addr_exc, ri_exc,ov_exc_en,	// WB need
+						 is_ds,halfword,rf_wen, rf_wdest,			// WB need
 						 pc};										// PC value
 //-----------{ID->EXE bus}end
 

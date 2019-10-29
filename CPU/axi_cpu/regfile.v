@@ -20,7 +20,8 @@
 //////////////////////////////////////////////////////////////////////////////////
 module regfile(
 	input wire 			clk,
-	input wire 			wen,
+	input wire          resetn,
+	input wire  [ 3:0]  wen,
 	input wire 	[ 4:0] 	raddr1,
 	input wire 	[ 4:0] 	raddr2,
 	input wire 	[ 4:0] 	waddr,
@@ -36,13 +37,59 @@ module regfile(
 	// read two ports combinationally
 	// write third port on rising edge of clock
 	// register 0 hardwired to 0
-
 	always @(posedge clk) 
 	begin
-		if (wen) 
+	    if (!resetn)
+	    begin
+	       rf[ 0] <= 32'b0;
+	       rf[ 1] <= 32'b0;
+	       rf[ 2] <= 32'b0;
+	       rf[ 3] <= 32'b0;
+	       rf[ 4] <= 32'b0;
+	       rf[ 5] <= 32'b0;
+	       rf[ 6] <= 32'b0;
+	       rf[ 7] <= 32'b0;
+	       rf[ 8] <= 32'b0;
+	       rf[ 9] <= 32'b0;
+	       rf[10] <= 32'b0;
+	       rf[11] <= 32'b0;
+	       rf[12] <= 32'b0;
+	       rf[13] <= 32'b0;
+	       rf[14] <= 32'b0;
+	       rf[15] <= 32'b0;
+	       rf[16] <= 32'b0;
+	       rf[17] <= 32'b0;
+	       rf[18] <= 32'b0;
+	       rf[19] <= 32'b0;
+	       rf[20] <= 32'b0;
+	       rf[21] <= 32'b0;
+	       rf[22] <= 32'b0;
+	       rf[23] <= 32'b0;
+	       rf[24] <= 32'b0;
+	       rf[25] <= 32'b0;
+	       rf[26] <= 32'b0;
+	       rf[27] <= 32'b0;
+	       rf[28] <= 32'b0;
+	       rf[29] <= 32'b0;
+	       rf[30] <= 32'b0;
+	       rf[31] <= 32'b0;
+	    end
+        if (wen[0])
 		begin
-			rf[waddr] <= wdata;
+			rf[waddr][7:0] <= wdata[7:0];
 		end
+        if (wen[1])
+        begin
+            rf[waddr][15:8] <= wdata[15:8]; 
+        end
+        if (wen[2])
+        begin
+            rf[waddr][23:16] <= wdata[23:16];
+        end
+        if (wen[3])
+        begin
+            rf[waddr][31:24] <= wdata[31:24];
+        end
 	end
 
 	// read port 1

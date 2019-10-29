@@ -20,13 +20,15 @@
 //////////////////////////////////////////////////////////////////////////////////
 module exe(
 	input wire 		    EXE_valid,
-	input wire [167:0]  ID_EXE_bus_r,	// ID->EXE bus
+	input wire [181:0]  ID_EXE_bus_r,	// ID->EXE bus
 	output wire 	    EXE_over,		// EXE module finish
-	output wire [153:0]	EXE_MEM_bus,	// EXE->MEM bus
+	output wire [166:0]	EXE_MEM_bus,	// EXE->MEM bus
 
 	// Five Levels Pipeline New Interface
 	input wire 			clk,
 	output wire [  4:0] EXE_wdest,		// destination address that EXE write back to regfile
+    output wire [ 31:0] EXE_result_quick_get,   // destination data that latter pipeline may use
+    output wire         EXE_quick_en,
 
 	// show PC
 	output wire [ 31:0]	EXE_pc
@@ -40,16 +42,18 @@ module exe(
 //----------{ID->EXE bus}begin
 	// EXE needs
 	wire [1:0] muldiv;
+	wire muldiv_signed;
 	wire mthi;
 	wire mtlo;
 	wire [11:0] alu_control;
 	wire [31:0] alu_operand1;
 	wire [31:0] alu_operand2;
+	wire data_related_en;
 
 	// load/store message that MEM may use
-	wire [3:0] mem_control;
+	wire [5:0] mem_control;
 	wire [31:0] store_data;
-
+	
 	// message that WB may use
 	wire mfhi;
 	wire mflo;
@@ -58,17 +62,25 @@ module exe(
 	wire [7:0] cp0r_addr;
 	wire syscall;
 	wire eret;
-	wire rf_wen;
+	wire break;
+	wire addr_exc;
+	wire ri_exc;
+	wire ov_exc_en;
+	wire is_ds;
+	wire [1:0] halfword;
+	wire [3:0] rf_wen;
 	wire [4:0] rf_wdest;
 	
 	// pc
 	wire [31:0] pc;
 	assign {muldiv,
+	        muldiv_signed,
 			mthi,
 			mtlo,
 			alu_control,
 			alu_operand1,
 			alu_operand2,
+			data_related_en,
 			mem_control,
 			store_data,
 			mfhi,
@@ -78,6 +90,12 @@ module exe(
 			cp0r_addr,
 			syscall,
 			eret,
+			break,
+			addr_exc,
+			ri_exc,
+			ov_exc_en,
+			is_ds,
+			halfword,
 			rf_wen,
 			rf_wdest,
 			pc} = ID_EXE_bus_r;
@@ -85,11 +103,13 @@ module exe(
 
 //----------{ALU}begin
 	wire [31:0] alu_result;
+	wire ov_exc;
 	alu alu_module(
 		.alu_control	(alu_control),		// I, 12, ALU control signal
 		.alu_src1		(alu_operand1),		// I, 32, ALU operand 1
 		.alu_src2		(alu_operand2),		// I, 32, ALU operand 2
-		.alu_result		(alu_result)		// O, 32, ALU result
+		.alu_result		(alu_result),		// O, 32, ALU result
+		.ov_exc 		(ov_exc)			// O, 1,  Overflow exception
 	);
 //----------{ALU}end
 
@@ -103,6 +123,7 @@ module exe(
 	divider divider_module(
 		.clk 			(clk),
 		.div_begin 		(div_begin),
+		.div_signed     (muldiv_signed),
 		.div_op1 		(alu_operand1),
 		.div_op2		(alu_operand2),
 		.div_result		(div_result),
@@ -118,6 +139,7 @@ module exe(
 	multiply multiply_module (
 		.clk		(clk),
 		.mult_begin (mult_begin),
+		.mult_signed(muldiv_signed),
 		.mult_op1 	(alu_operand1),
 		.mult_op2	(alu_operand2),
 		.product 	(product),
@@ -141,6 +163,7 @@ module exe(
 	wire [31:0] lo_result;
 	wire 		hi_write;
 	wire 		lo_write;
+	wire        ov_exc_final;
 	// The value to write to HI is put into exe_result, including MULT and MTHI.
 	// The value to write to LO is put into lo_result, including MULT and MTLO.
 	assign exe_result = mthi 		? alu_operand1 :
@@ -151,15 +174,20 @@ module exe(
 					   muldiv[0] ? product[31:0] : div_result;
 	assign hi_write = muldiv[0] | muldiv[1] | mthi;
 	assign lo_write = muldiv[0] | muldiv[1] | mtlo;
-
+    assign ov_exc_final = ov_exc_en & ov_exc;
 	assign EXE_MEM_bus = {mem_control,store_data,			// load/store message and store's data
+						  data_related_en,                  
 						  exe_result,						// exe calculation or mul's high-32bit or div's remainder
 						  lo_result,						// mul's' low-32bit result or div's quotient
 						  hi_write,lo_write,				// HI/LO write able
 						  mfhi,mflo,						// signal that WB need
-						  mtc0,mfc0,cp0r_addr,syscall,eret,	// signal that WB need
-						  rf_wen,rf_wdest,					// signal that WB need
+						  mtc0,mfc0,						// signal that WB need
+						  cp0r_addr,syscall,eret,break,		// signal that WB need
+						  addr_exc, ov_exc_final, ri_exc,	// signal that WB need
+						  is_ds,halfword,rf_wen,rf_wdest,	// signal that WB need
 						  pc};								// PC
+	assign EXE_result_quick_get = exe_result;
+	assign EXE_quick_en = data_related_en;
 //----------{EXE->MEM bus}end
 
 //----------{show PC of EXE module}begin

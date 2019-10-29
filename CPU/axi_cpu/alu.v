@@ -24,7 +24,8 @@ module alu(
 	input wire [11:0] 	alu_control,	// ALU control signal
 	input wire [31:0] 	alu_src1,		// ALU operand 1
 	input wire [31:0] 	alu_src2,		// ALU operand 2
-	output wire [31:0] 	alu_result 	// ALU result
+	output wire [31:0] 	alu_result, 	// ALU result
+    output wire         ov_exc          // Overflow Exception
     );
 
 	// ALU control signal, One-Hot Code
@@ -73,23 +74,19 @@ module alu(
     assign lui_result = {alu_src2[15:0], 16'd0};
 
 //----------{adder}begin
-	wire [31:0] adder_operand1;
-	wire [31:0] adder_operand2;
+	wire [32:0] adder_operand1;
+	wire [32:0] adder_operand2;
 	wire 		adder_cin;
-	wire [31:0] adder_result;
+	wire [32:0] adder_result;
 	wire 		adder_cout;
-	assign adder_operand1 = alu_src1;
-	assign adder_operand2 = alu_add ? alu_src2 : ~alu_src2;
-	assign adder_cin = ~alu_add;
-	adder adder_module(
-		.operand1(adder_operand1),
-		.operand2(adder_operand2),
-		.cin(adder_cin),
-		.result(adder_result),
-		.cout(adder_cout)
-	);
 
-	assign add_sub_result = adder_result;
+	assign adder_operand1 = {alu_src1[31],alu_src1};
+	assign adder_operand2 = alu_add ? {alu_src2[31],alu_src2} : ~{alu_src2[31],alu_src2};
+	assign adder_cin = ~alu_add;
+    assign {adder_cout,adder_result} = adder_operand1 + adder_operand2 + adder_cin;
+    assign ov_exc = (adder_result[32]!=adder_result[31]);
+
+	assign add_sub_result = adder_result[31:0];
 
 	// slt result
     //adder_src1[31] adder_src2[31] adder_result[31]

@@ -27,12 +27,17 @@ module fetch(
 	input wire			next_fetch,	// fetch the next instruction, used to latch PC
 	input wire 	[31:0]	inst,		// instruction from inst_rom
 	input wire	[32:0]	jbr_bus,	// jump bus
-	output wire	[31:0]	inst_addr,	// fetch_address sent to inst_rom
+	output wire 		inst_en,	// inst_ram's enable signal
+	output wire [ 3:0]	inst_wen,	// inst_ram's word enable signal
+	output wire	[31:0]	inst_addr,	// fetch_address sent to inst_ram
 	output reg			IF_over,	// IF module is finish
-	output wire	[63:0]	IF_ID_bus,	// IF -> ID bus
+	output wire	[65:0]	IF_ID_bus,	// IF -> ID bus
 
 	// Five Levels Pipeline New Interface
 	input wire	[32:0]	exc_bus,	// Exception pc bus
+	input wire          is_ds,		// Current instruction is delay slot or not
+	input wire  [31:0]  ID_pc,     
+
 
 	// Show PC and instruction fetched
 	output wire	[31:0] 	IF_pc,
@@ -43,6 +48,7 @@ module fetch(
 	wire [31:0] next_pc;
 	wire [31:0] seq_pc;
 	reg  [31:0] pc;
+    reg exc_flush_over;
 
 	// jump pc
 	wire		jbr_taken;
@@ -68,16 +74,19 @@ module fetch(
 		if (!resetn)
 		begin
 			// reset
-			pc <= `STARTADDR;	
+			pc <= `STARTADDR;
+			exc_flush_over <= 1'b0;	
 		end
 		else if (next_fetch)
 		begin
-			pc <= next_pc;	
+			pc <= next_pc;
 		end
 	end
 // -----------{PC}end
 
 // -----------{Instruction Sent to inst_rom}begin
+	assign inst_en   = IF_valid;
+	assign inst_wen = 4'b0000;
 	assign inst_addr = pc;
 // -----------{Instruction Sent to inst_rom}end
 
@@ -105,7 +114,9 @@ module fetch(
 // -----------{IF finish}end
 
 // -----------{IF->ID bus}begin
-	assign IF_ID_bus = {pc, inst};	// if IF is valid, latch PC and instruction
+	wire addr_exc;
+	assign addr_exc = (pc[1:0]!=2'b00) ? 1'b1 : 1'b0;
+	assign IF_ID_bus = {pc, inst, addr_exc, is_ds & (pc==(ID_pc + 32'd4))};	// if IF is valid, latch PC and instruction
 // -----------{IF->ID bus}end
 
 // -----------{show PC and instruction of IF module}begin

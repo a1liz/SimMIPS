@@ -22,6 +22,7 @@
 module divider(
 	input wire 			clk,
 	input wire 			div_begin,
+	input wire          div_signed,
 	input wire [31:0] 	div_op1,
 	input wire [31:0] 	div_op2,
 	output wire [31:0] 	div_result,
@@ -58,10 +59,10 @@ module divider(
     wire        op2_sign;      
     wire [31:0] op1_absolute;  
     wire [31:0] op2_absolute;  
-    assign op1_sign = div_op1[31];
-    assign op2_sign = div_op2[31];
-    assign op1_absolute = op1_sign ? (~div_op1+1) : div_op1;
-    assign op2_absolute = op2_sign ? (~div_op2+1) : div_op2;
+    assign op1_sign = div_signed ? div_op1[31] : 1'b0;
+    assign op2_sign = div_signed ? div_op2[31] : 1'b0;
+    assign op1_absolute = ~div_signed ? div_op1 : op1_sign ? (~div_op1+1) : div_op1;
+    assign op2_absolute = ~div_signed ? div_op2 : op2_sign ? (~div_op2+1) : div_op2;
 
     // Load dividend, actually we can regard it as the original remainder
     reg [63:0] remainder;
@@ -109,7 +110,7 @@ module divider(
     end
     
     assign div_result = quotient_sign ? (~quotient + 1) : quotient;
-    assign div_remainder = remainder[31:0];
+    assign div_remainder = op1_sign ? (~remainder[31:0] + 1) : remainder[31:0];
 //    assign debug_divisor = divisor;
 //    assign debug_remainder = remainder;
 //    assign debug_quotient = quotient;

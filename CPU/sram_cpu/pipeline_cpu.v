@@ -20,38 +20,78 @@
 //////////////////////////////////////////////////////////////////////////////////
 
 module pipeline_cpu(
-    input wire clk,  // clock
-    input wire resetn,   // reset signal
+    input wire clk,  						// clock
+    input wire resetn,   					// reset signal
+    input wire [5:0] int,
     
-    // display data
-    input wire [4:0] rf_addr,
-    input wire [31:0] mem_addr,
-    output wire [31:0] rf_data,
-    output wire [31:0] mem_data,
-    output wire [31:0] IF_pc,
-    output wire [31:0] IF_inst,
-    output wire [31:0] ID_pc,
-    output wire [31:0] EXE_pc,
-    output wire [31:0] MEM_pc,
-    output wire [31:0] WB_pc,
+    // inst sram interface
+    output wire inst_sram_en,				//
+    output wire [ 3:0] inst_sram_wen,		//
+    output wire [31:0] inst_sram_addr,		//
+    output wire [31:0] inst_sram_wdata,		//
+    input  wire [31:0] inst_sram_rdata,		//
+
+    // data sram interface
+    output wire data_sram_en,				//
+    output wire [ 3:0] data_sram_wen,		//
+    output wire [31:0] data_sram_addr,		//
+    output wire [31:0] data_sram_wdata,		//
+    input  wire [31:0] data_sram_rdata,		//
+
+    // debug signal for tb
+    output wire [31:0] debug_wb_pc,			//
+    output wire [ 3:0] debug_wb_rf_wen,		//
+    output wire [ 4:0] debug_wb_rf_wnum,	//
+    output wire [31:0] debug_wb_rf_wdata 	// 
+
+
+    // // display data
+    // input wire [4:0] rf_addr,
+    // input wire [31:0] mem_addr,
+    // output wire [31:0] rf_data,
+    // output wire [31:0] mem_data,
+    // output wire [31:0] IF_pc,
+    // output wire [31:0] IF_inst,
+    // output wire [31:0] ID_pc,
+    // output wire [31:0] EXE_pc,
+    // output wire [31:0] MEM_pc,
+    // output wire [31:0] WB_pc,
     
-    // Five Levels Pipeline
-    output wire [31:0] cpu_5_valid,
-    output wire [31:0] HI_data,
-    output wire [31:0] LO_data,
+    // // Five Levels Pipeline
+    // output wire [31:0] cpu_5_valid,
+    // output wire [31:0] HI_data,
+    // output wire [31:0] LO_data,
     
-    // SRAM inst_rom part
-    output wire [19:0] SRAM_inst_addr,
-    input wire [31:0] SRAM_inst,
+    // // SRAM inst_rom part
+    // output wire [19:0] SRAM_inst_addr,
+    // input wire [31:0] SRAM_inst,
     
-    // SRAM ram part
-    inout wire [31:0] SRAM_dm_data,
-    output wire [19:0] SRAM_dm_addr,
-    output wire [3:0] SRAM_dm_wen,
-    output wire SRAM_dm_ce_n,       // chip enable,  low valid
-    output wire SRAM_dm_oe_n,       // read enable,  low valid
-    output wire SRAM_dm_we_n       // write enable, low valid
+    // // SRAM ram part
+    // inout wire [31:0] SRAM_dm_data,
+    // output wire [19:0] SRAM_dm_addr,
+    // output wire [3:0] SRAM_dm_wen,
+    // output wire SRAM_dm_ce_n,       // chip enable,  low valid
+    // output wire SRAM_dm_oe_n,       // read enable,  low valid
+    // output wire SRAM_dm_we_n       // write enable, low valid
     );
+
+// ----------{Display data}begin--------------------------------- //
+     wire [4:0] rf_addr;
+     wire [31:0] mem_addr;
+     wire [31:0] rf_data;
+     wire [31:0] mem_data;
+     wire [31:0] IF_pc;
+     wire [31:0] IF_inst;
+     wire [31:0] ID_pc;
+     wire [31:0] EXE_pc;
+     wire [31:0] MEM_pc;
+     wire [31:0] WB_pc;
+    
+     // Five Levels Pipeline
+     wire [31:0] cpu_5_valid;
+     wire [31:0] HI_data;
+     wire [31:0] LO_data;
+// ----------{Display data}end----------------------------------- //
 
 // ----------{Five Levels Pipeline Control Signal}begin---------- //
 //
@@ -105,7 +145,7 @@ module pipeline_cpu(
             // reset
             ID_valid <= 1'b0;
         end
-        else
+        else if (ID_allow_in)
         begin
             ID_valid <= IF_over;
         end
@@ -113,12 +153,12 @@ module pipeline_cpu(
 
     // EVE_valid
     always @(posedge clk) begin
-        if (resetn) 
+        if (!resetn || cancel) 
         begin
             // reset
             EXE_valid <= 1'b0;    
         end
-        else if (ID_allow_in)
+        else if (EXE_allow_in)
         begin
             EXE_valid <= ID_over;    
         end
@@ -150,22 +190,22 @@ module pipeline_cpu(
         end
     end
 
-    assign cpu_5_valid = {12'd0     ,{4{IF_valid}},{4{ID_valid}},
-                            {4{EXE_valid}},{4{MEM_valid}},{4{WB_valid}}};
+//    assign cpu_5_valid = {12'd0     ,{4{IF_valid}},{4{ID_valid}},
+//                            {4{EXE_valid}},{4{MEM_valid}},{4{WB_valid}}};
 // ----------{Five Levels Pipeline Control Signal}end---------- //
 
 // ----------{Bus between Five Levels}begin-------------------- //
 //
-    wire [ 63:0] IF_ID_bus;     // IF->ID Bus
-    wire [166:0] ID_EXE_bus;    // ID->EXE Bus
-    wire [153:0] EXE_MEM_bus;   // EXE->MEM Bus
-    wire [117:0] MEM_WB_bus;    // MEM->WB Bus
+    wire [ 65:0] IF_ID_bus;     // IF->ID Bus
+    wire [181:0] ID_EXE_bus;    // ID->EXE Bus
+    wire [166:0] EXE_MEM_bus;   // EXE->MEM Bus
+    wire [160:0] MEM_WB_bus;    // MEM->WB Bus
 
     // Latch Bus Signal above
-    reg [ 63:0] IF_ID_bus_r;
-    reg [166:0] ID_EXE_bus_r;
-    reg [153:0] EXE_MEM_bus_r;
-    reg [117:0] MEM_WB_bus_r;
+    reg [ 65:0] IF_ID_bus_r;
+    reg [181:0] ID_EXE_bus_r;
+    reg [166:0] EXE_MEM_bus_r;
+    reg [160:0] MEM_WB_bus_r;
 
     // Latch Signal from IF to ID
     always @(posedge clk) 
@@ -195,6 +235,17 @@ module pipeline_cpu(
     end
 
     // Latch Signal from MEM to WB
+    always @(posedge clk)
+    begin
+        if (!resetn)
+        begin
+            MEM_WB_bus_r <= 161'd0;
+        end
+        else if (MEM_over && WB_allow_in)
+        begin
+            MEM_WB_bus_r <= MEM_WB_bus;
+        end
+    end
 // ----------{Bus between Five Levels}end---------------------- //
 
 // ----------{Other Interaction Signal}begin------------------- //
@@ -202,16 +253,25 @@ module pipeline_cpu(
     // jump bus
     wire [32:0] jbr_bus;
 
-    // Interaction between IF and inst_rom
+    // Interaction between IF and inst_ram
+    wire inst_en;
+    wire [3:0] inst_wen;
     wire [31:0] inst_addr;
+    wire [31:0] inst_wdata;	// Not use
     wire [31:0] inst;
+
 
     // Interaction between ID and EXE, MEM, WB
     wire [ 4:0] EXE_wdest;
     wire [ 4:0] MEM_wdest;
     wire [ 4:0] WB_wdest;
+    wire [31:0] EXE_result_quick_get;
+    wire [31:0] MEM_result_quick_get;
+    wire EXE_quick_en;
+    wire MEM_quick_en;
 
     // Interaction between MEM and data_ram
+    wire dm_en;
     wire [ 3:0] dm_wen;
     wire [31:0] dm_addr;
     wire [31:0] dm_wdata;
@@ -224,7 +284,7 @@ module pipeline_cpu(
     wire [31:0] rt_value;
 
     // Interaction between WB and regfile
-    wire        rf_wen;
+    wire [ 3:0] rf_wen;
     wire [ 4:0] rf_wdest;
     wire [31:0] rf_wdata;
 
@@ -235,8 +295,27 @@ module pipeline_cpu(
 // ----------{Each Module Instantiation}begin------------------ //
 //
     wire next_fetch;    // it's going to run fetch module, need latch the value of PC
+    wire inst_jbr;
+
     // when IF allows in, latch PC and fetch next instruction.
+    
+    // Set signal of inst_sram and data_sram
+    // inst_sram
     assign next_fetch = IF_allow_in;
+    assign inst_sram_en = inst_en;
+    assign inst_sram_wen = inst_wen;
+    assign inst_sram_addr = inst_addr;
+    assign inst_sram_wdata = inst_wdata;
+    assign inst_wdata = 32'd0;
+    assign inst = inst_sram_rdata;
+    // data_sram
+    assign data_sram_en = dm_en;
+    assign data_sram_wen = dm_wen & {4{~cancel}};
+    assign data_sram_addr = dm_addr;
+    assign data_sram_wdata = dm_wdata;
+    assign dm_rdata = data_sram_rdata;
+
+
     fetch IF_module(
         .clk       (clk       ),  // I, 1
         .resetn    (resetn    ),  // I, 1
@@ -244,13 +323,17 @@ module pipeline_cpu(
         .next_fetch(next_fetch),  // I, 1
         .inst      (inst      ),  // I, 32
         .jbr_bus   (jbr_bus   ),  // I, 33
+        .inst_en   (inst_en   ),  // O, 1
+        .inst_wen  (inst_wen  ),  // O, 4
         .inst_addr (inst_addr ),  // O, 32
         .IF_over   (IF_over   ),  // O, 1
         .IF_ID_bus (IF_ID_bus ),  // O, 64
         
         // Five Levels Pipeline New Interface
         .exc_bus   (exc_bus   ),  // I, 32
-        
+        .is_ds     (inst_jbr  ),  // I, 1
+        .ID_pc     (ID_pc     ),  // I, 32
+
         // Show PC and instruction fetched
         .IF_pc     (IF_pc     ),  // O, 32
         .IF_inst   (IF_inst   )   // O, 32
@@ -264,15 +347,21 @@ module pipeline_cpu(
         .rs         (rs         ),  // O, 5
         .rt         (rt         ),  // O, 5
         .jbr_bus    (jbr_bus    ),  // O, 33
-//        .inst_jbr   (inst_jbr   ),  // O, 1
+        .inst_jbr   (inst_jbr   ),  // O, 1
         .ID_over    (ID_over    ),  // O, 1
-        .ID_EXE_bus (ID_EXE_bus ),  // O, 167
+        .ID_EXE_bus (ID_EXE_bus ),  // O, 168
         
         // Five Levels Pipeline New Interface
         .IF_over     (IF_over     ),// I, 1
+        .EXE_over    (EXE_over    ),// I, 1
+        .MEM_over    (MEM_over    ),// I, 1
         .EXE_wdest   (EXE_wdest   ),// I, 5
         .MEM_wdest   (MEM_wdest   ),// I, 5
         .WB_wdest    (WB_wdest    ),// I, 5
+        .EXE_result_quick_get(EXE_result_quick_get),// I, 32
+        .MEM_result_quick_get(MEM_result_quick_get),// I, 32
+        .EXE_quick_en(EXE_quick_en),// I, 1
+        .MEM_quick_en(MEM_quick_en),// I, 1
         
         // Show PC
         .ID_pc       (ID_pc       ) // O, 32
@@ -280,13 +369,15 @@ module pipeline_cpu(
 
     exe EXE_module(
         .EXE_valid   (EXE_valid   ),  // I, 1
-        .ID_EXE_bus_r(ID_EXE_bus_r),  // I, 167
+        .ID_EXE_bus_r(ID_EXE_bus_r),  // I, 168
         .EXE_over    (EXE_over    ),  // O, 1 
         .EXE_MEM_bus (EXE_MEM_bus ),  // O, 154
         
         // Five Levels Pipeline New Interface
         .clk         (clk         ),  // I, 1
         .EXE_wdest   (EXE_wdest   ),  // O, 5
+        .EXE_result_quick_get(EXE_result_quick_get), // O, 32
+        .EXE_quick_en(EXE_quick_en),  // O, 1
         
         // show PC
         .EXE_pc      (EXE_pc      )   // O, 32
@@ -298,18 +389,18 @@ module pipeline_cpu(
         .EXE_MEM_bus_r(EXE_MEM_bus_r),  // I, 154
         .dm_rdata     (dm_rdata     ),  // I, 32
         .dm_addr      (dm_addr      ),  // O, 32
+        .dm_en 		  (dm_en 		),	// O, 1
         .dm_wen       (dm_wen       ),  // O, 4 
         .dm_wdata     (dm_wdata     ),  // O, 32
-        .dm_ce_n      (SRAM_dm_ce_n      ),  // O, 1
-        .dm_oe_n      (SRAM_dm_oe_n      ),  // O, 1
-        .dm_we_n      (SRAM_dm_we_n      ),  // O, 1
         .MEM_over     (MEM_over     ),  // O, 1
         .MEM_WB_bus   (MEM_WB_bus   ),  // O, 118
         
         // Five Levels Pipeline New Interface
         .MEM_allow_in (MEM_allow_in ),  // I, 1
         .MEM_wdest    (MEM_wdest    ),  // O, 5
-        
+        .MEM_result_quick_get(MEM_result_quick_get),// O, 32
+        .MEM_quick_en (MEM_quick_en),   // O, 1
+
         // show PC
         .MEM_pc       (MEM_pc       )   // O, 32
     );          
@@ -317,14 +408,14 @@ module pipeline_cpu(
     wb WB_module(
         .WB_valid    (WB_valid    ),  // I, 1
         .MEM_WB_bus_r(MEM_WB_bus_r),  // I, 118
-        .rf_wen      (rf_wen      ),  // O, 1
+        .rf_wen      (rf_wen      ),  // O, 4
         .rf_wdest    (rf_wdest    ),  // O, 5
         .rf_wdata    (rf_wdata    ),  // O, 32
-          .WB_over     (WB_over     ),  // O, 1
+        .WB_over     (WB_over     ),  // O, 1
         
         // Five Levels Pipeline New Interface
         .clk         (clk         ),  // I, 1
-      .resetn      (resetn      ),  // I, 1
+      	.resetn      (resetn      ),  // I, 1
         .exc_bus     (exc_bus     ),  // O, 32
         .WB_wdest    (WB_wdest    ),  // O, 5
         .cancel      (cancel      ),  // O, 1
@@ -343,13 +434,14 @@ module pipeline_cpu(
 
     regfile rf_module(
         .clk    (clk      ),  // I, 1
-        .wen    (rf_wen   ),  // I, 1
+        .resetn (resetn   ),  // I, 1
+        .wen    (rf_wen   ),  // I, 4
         .raddr1 (rs       ),  // I, 5
         .raddr2 (rt       ),  // I, 5
         .waddr  (rf_wdest ),  // I, 5
         .wdata  (rf_wdata ),  // I, 32
         .rdata1 (rs_value ),  // O, 32
-        .rdata2 (rt_value ),  // O, 32
+        .rdata2 (rt_value ),   // O, 32
 
         //display rf
         .test_addr(rf_addr),  // I, 5
@@ -374,16 +466,22 @@ module pipeline_cpu(
 // ----------{Each Module Instantiation}end-------------------- //
 
 // ----------{Communication with SRAM}begin-------------------- //
-    // SRAM inst_rom part
-    assign SRAM_inst_addr = inst_addr[21:2];
-    assign SRAM_inst = inst;
+    // // SRAM inst_rom part
+    // assign SRAM_inst_addr = inst_addr[21:2];
+    // assign SRAM_inst = inst;
     
-    // SRAM ram part
-    assign SRAM_dm_wen = ~dm_wen;
-    assign SRAM_dm_addr = dm_addr[21:2];
-    assign SRAM_dm_data = ~SRAM_dm_we_n ? dm_wdata : ~SRAM_dm_oe_n ? dm_rdata : 32'd0;
+    // // SRAM ram part
+    // assign SRAM_dm_wen = ~dm_wen;
+    // assign SRAM_dm_addr = dm_addr[21:2];
+    // assign SRAM_dm_data = ~SRAM_dm_we_n ? dm_wdata : ~SRAM_dm_oe_n ? dm_rdata : 32'd0;
     
 // ----------{Communication with SRAM}end---------------------- //
 
+// ----------{debug interface in WB}begin---------------------- //
+	assign debug_wb_pc = WB_pc;
+	assign debug_wb_rf_wen = rf_wen;
+	assign debug_wb_rf_wnum = rf_wdest;
+	assign debug_wb_rf_wdata = rf_wdata;
+// ----------{debug interface in WB}end------------------------ //
 
 endmodule

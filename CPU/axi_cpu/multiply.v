@@ -22,6 +22,7 @@
 module multiply(
 	input wire 			clk,
 	input wire 			mult_begin,
+	input wire          mult_signed,
 	input wire 	[31:0] 	mult_op1,
 	input wire 	[31:0] 	mult_op2,
 	output wire [63:0] 	product,
@@ -51,10 +52,10 @@ module multiply(
 	wire 		op2_sign;
 	wire [31:0] op1_absolute;
 	wire [31:0] op2_absolute;
-	assign op1_sign = mult_op1[31];
-	assign op2_sign = mult_op2[31];
-	assign op1_absolute = op1_sign ? (~mult_op1+1) : mult_op1;
-    assign op2_absolute = op2_sign ? (~mult_op2+1) : mult_op2;
+	assign op1_sign = mult_signed ? mult_op1[31] : 1'b0;
+	assign op2_sign = mult_signed ? mult_op2[31] : 1'b0;
+	assign op1_absolute = ~mult_signed ? mult_op1 : op1_sign ? (~mult_op1+1) : mult_op1;
+    assign op2_absolute = ~mult_signed ? mult_op2 : op2_sign ? (~mult_op2+1) : mult_op2;
 
     //?????????????????????????????????????????????
     reg  [63:0] multiplicand;
