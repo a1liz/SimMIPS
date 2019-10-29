@@ -8,8 +8,8 @@ SimMIPS is mainly a pipeline CPU based on MIPS32.
 
 [x] Finish test for each module.
 
-[ ] Pass full [function test](https://github.com/oscourse-tsinghua/cpu-testcase)
+[x] Pass full function test
 
-[ ] Add interrupt
+[x] Add interrupt
 
 [ ] Add Cache
